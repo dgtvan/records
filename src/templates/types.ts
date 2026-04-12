@@ -4,7 +4,7 @@ import type {
   ParsedRecord,
   PreviewDescriptor,
   ProfileRecord,
-  ProfileRecordTypeFolder,
+  ProfileRecordCollection,
   RecordTypeId,
   TemplateId,
   TimelineGroup,
@@ -14,6 +14,7 @@ import type { PreviewService, RecordService } from "../services/contracts";
 
 export interface TemplateHeaderRendererProps {
   profile: ProfileRecord;
+  activeRecordCollection: ProfileRecordCollection;
   activeRecordType: TemplateRecordTypeDefinition;
   groups: TimelineGroup[];
 }
@@ -31,8 +32,8 @@ export interface TemplateRecordTypeRendererProps {
 
 export interface TemplateWorkspaceRendererProps {
   profile: ProfileRecord;
+  activeRecordCollection: ProfileRecordCollection;
   activeRecordType: TemplateRecordTypeDefinition;
-  activeRecordTypeFolder: ProfileRecordTypeFolder;
   recordService: RecordService;
   previewService: PreviewService;
 }

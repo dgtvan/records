@@ -1,28 +1,34 @@
 import type { TemplateRecordTypeDefinition } from "../templates";
 import type { ProfileIssue } from "../types";
 
+interface RecordCollectionListItem {
+  id: string;
+  name: string;
+  recordType: TemplateRecordTypeDefinition;
+}
+
 interface AppSidebarProps {
   issues: ProfileIssue[];
   activeProfileName: string;
-  availableRecordTypes: TemplateRecordTypeDefinition[];
-  activeRecordTypeId?: string;
-  canAddRecordType: boolean;
+  availableRecordCollections: RecordCollectionListItem[];
+  activeRecordCollectionId?: string;
+  canAddRecordCollection: boolean;
   onOpenProfileSwitcher(): void;
-  onOpenAddRecordTypePicker(): void;
+  onOpenAddRecordCollectionPopup(): void;
   onSignOut(): void;
-  onSelectRecordType(recordTypeId: string): void;
+  onSelectRecordCollection(collectionId: string): void;
 }
 
 export function AppSidebar({
   issues,
   activeProfileName,
-  availableRecordTypes,
-  activeRecordTypeId,
-  canAddRecordType,
+  availableRecordCollections,
+  activeRecordCollectionId,
+  canAddRecordCollection,
   onOpenProfileSwitcher,
-  onOpenAddRecordTypePicker,
+  onOpenAddRecordCollectionPopup,
   onSignOut,
-  onSelectRecordType,
+  onSelectRecordCollection,
 }: AppSidebarProps) {
   const profileInitials = activeProfileName
     .split(/\s+/)
@@ -48,12 +54,12 @@ export function AppSidebar({
 
         <section className="sidebar-section">
           <div className="sidebar-section-head">
-            <h2 className="sidebar-section-title">Record Types</h2>
+            <h2 className="sidebar-section-title">Record Collections</h2>
             <button
               className="icon-button compact-icon-button"
-              disabled={!canAddRecordType}
-              onClick={onOpenAddRecordTypePicker}
-              title="Add record type"
+              disabled={!canAddRecordCollection}
+              onClick={onOpenAddRecordCollectionPopup}
+              title="Add record collection"
               type="button"
             >
               <svg aria-hidden="true" className="sidebar-icon" viewBox="0 0 24 24">
@@ -62,15 +68,16 @@ export function AppSidebar({
             </button>
           </div>
           <div className="sidebar-list">
-            {availableRecordTypes.length === 0 ? <p className="sidebar-empty">No recognized record type folders in this profile.</p> : null}
-            {availableRecordTypes.map((recordType) => (
+            {availableRecordCollections.length === 0 ? <p className="sidebar-empty">No record collections in this profile yet.</p> : null}
+            {availableRecordCollections.map((collection) => (
               <button
-                className={recordType.id === activeRecordTypeId ? "sidebar-item active" : "sidebar-item"}
-                key={recordType.id}
-                onClick={() => onSelectRecordType(recordType.id)}
+                className={collection.id === activeRecordCollectionId ? "sidebar-item active" : "sidebar-item"}
+                key={collection.id}
+                onClick={() => onSelectRecordCollection(collection.id)}
                 type="button"
               >
-                <strong>{recordType.label}</strong>
+                <strong>{collection.name}</strong>
+                <span>{collection.recordType.label}</span>
               </button>
             ))}
           </div>

@@ -38,10 +38,18 @@ export interface ProfileConfig {
   createdAt: string;
 }
 
-export interface ProfileRecordTypeFolder {
+export interface RecordCollectionConfig {
+  name: string;
   recordTypeId: RecordTypeId;
+  createdAt: string;
+}
+
+export interface ProfileRecordCollection {
   folderId: string;
   folderName: string;
+  name: string;
+  configFileId?: string;
+  recordTypeId: RecordTypeId;
 }
 
 export interface ProfileRecord {
@@ -49,7 +57,7 @@ export interface ProfileRecord {
   profileFolderName: string;
   configFileId: string;
   config: ProfileConfig;
-  recordTypeFolders: ProfileRecordTypeFolder[];
+  recordCollections: ProfileRecordCollection[];
 }
 
 export interface ProfileIssue {
@@ -91,7 +99,7 @@ export interface UploadDraft {
 
 export interface UploadRequest {
   profile: ProfileRecord;
-  recordTypeFolder: ProfileRecordTypeFolder;
+  recordCollection: ProfileRecordCollection;
   storedFileName: string;
   date: string;
   file: File;
@@ -102,11 +110,16 @@ export interface CreateProfileRequest {
   templateId: TemplateId;
 }
 
+export interface CreateRecordCollectionRequest {
+  name: string;
+  recordTypeId: RecordTypeId;
+}
+
 export interface AppShellState {
   signedIn: boolean;
   activeProfileId?: string;
-  activeRecordTypeId?: string;
+  activeRecordCollectionId?: string;
   profileCount: number;
   issueCount: number;
-  recordTypeCount: number;
+  recordCollectionCount: number;
 }

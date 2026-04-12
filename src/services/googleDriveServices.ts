@@ -2,12 +2,14 @@ import { getTemplateDefinition } from "../templates";
 import type {
   AppFolderState,
   CreateProfileRequest,
+  CreateRecordCollectionRequest,
   DriveFile,
   ProfileConfig,
+  RecordCollectionConfig,
   ProfileIssue,
   ProfileListResult,
   ProfileRecord,
-  ProfileRecordTypeFolder,
+  ProfileRecordCollection,
   UploadRequest,
 } from "../types";
 import type {
@@ -26,6 +28,7 @@ const DRIVE_UPLOAD_ROOT = "https://www.googleapis.com/upload/drive/v3/files";
 const USER_INFO_API = "https://www.googleapis.com/oauth2/v2/userinfo";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const PROFILE_CONFIG_FILE_NAME = "profile.json";
+const RECORD_COLLECTION_CONFIG_FILE_NAME = "record-collection.json";
 const SESSION_STORAGE_KEY = "records-timeline-auth-session";
 const AUTH_GRANTED_STORAGE_KEY = "records-timeline-auth-granted";
 const APP_FOLDER_NAME = import.meta.env.VITE_GOOGLE_APP_FOLDER_NAME || ".simple-records-app-data";
@@ -292,6 +295,14 @@ function mapDriveFile(file: DriveFile): DriveFile {
   };
 }
 
+async function listChildFolders(parentId: string): Promise<Array<{ id: string; name: string }>> {
+  return listFiles<{ id: string; name: string }>({
+    q: `'${parentId}' in parents and mimeType='${FOLDER_MIME_TYPE}' and trashed=false`,
+    fields: "files(id,name)",
+    orderBy: "name_natural",
+  });
+}
+
 async function ensureProfilesFolder(appFolderId: string): Promise<{ id: string; name: string }> {
   const profileFolders = await listFiles<{ id: string; name: string }>({
     q: `name='profiles' and mimeType='${FOLDER_MIME_TYPE}' and '${appFolderId}' in parents and trashed=false`,
@@ -328,6 +339,29 @@ function validateProfileConfig(data: unknown): ProfileConfig {
   return {
     name: candidate.name,
     templateId: candidate.templateId,
+    createdAt: candidate.createdAt,
+  };
+}
+
+function validateRecordCollectionConfig(data: unknown): RecordCollectionConfig {
+  if (!data || typeof data !== "object") {
+    throw new Error("record-collection.json is not a valid object.");
+  }
+
+  const candidate = data as Partial<RecordCollectionConfig>;
+  if (typeof candidate.name !== "string" || !candidate.name.trim()) {
+    throw new Error("record-collection.json is missing a valid name.");
+  }
+  if (typeof candidate.recordTypeId !== "string" || !candidate.recordTypeId.trim()) {
+    throw new Error("record-collection.json is missing a valid recordTypeId.");
+  }
+  if (typeof candidate.createdAt !== "string" || !candidate.createdAt) {
+    throw new Error("record-collection.json is missing createdAt.");
+  }
+
+  return {
+    name: candidate.name,
+    recordTypeId: candidate.recordTypeId,
     createdAt: candidate.createdAt,
   };
 }
@@ -421,7 +455,7 @@ const profiles: ProfileService = {
           profileFolderName: folder.name,
           configFileId: configFiles[0].id,
           config,
-          recordTypeFolders: [],
+          recordCollections: [],
         });
       } catch (error) {
         issues.push({
@@ -436,18 +470,7 @@ const profiles: ProfileService = {
   },
   async createProfile(request: CreateProfileRequest): Promise<ProfileRecord> {
     const { profilesFolder } = await driveBootstrap.ensureAppFolders();
-    const template = getTemplateDefinition(request.templateId);
     const profileFolder = await createFolder(request.name, profilesFolder.id);
-
-    const createdFolders: ProfileRecordTypeFolder[] = [];
-    for (const recordType of template.recordTypes) {
-      const folder = await createFolder(recordType.folderName, profileFolder.id);
-      createdFolders.push({
-        recordTypeId: recordType.id,
-        folderId: folder.id,
-        folderName: folder.name,
-      });
-    }
 
     const config: ProfileConfig = {
       name: request.name,
@@ -475,38 +498,105 @@ const profiles: ProfileService = {
       profileFolderName: profileFolder.name,
       configFileId: configFiles[0]?.id ?? "",
       config,
-      recordTypeFolders: createdFolders,
+      recordCollections: [],
     };
   },
-  async listRecordTypeFolders(profile: ProfileRecord): Promise<ProfileRecordTypeFolder[]> {
-    const childFolders = await listFiles<{ id: string; name: string }>({
-      q: `'${profile.profileFolderId}' in parents and mimeType='${FOLDER_MIME_TYPE}' and trashed=false`,
-      fields: "files(id,name)",
-      orderBy: "name_natural",
-    });
-
+  async listRecordCollections(profile: ProfileRecord): Promise<ProfileRecordCollection[]> {
+    const childFolders = await listChildFolders(profile.profileFolderId);
     const template = getTemplateDefinition(profile.config.templateId);
-    return template.recordTypes
-      .map((recordType) => {
-        const folder = childFolders.find((candidate) => candidate.name === recordType.folderName);
-        if (!folder) {
-          return null;
-        }
+    const collections: ProfileRecordCollection[] = [];
 
-        return {
-          recordTypeId: recordType.id,
+    for (const folder of childFolders) {
+      const configFiles = await listFiles<{ id: string; name: string }>({
+        q: `name='${RECORD_COLLECTION_CONFIG_FILE_NAME}' and '${folder.id}' in parents and trashed=false`,
+        fields: "files(id,name)",
+      });
+
+      if (configFiles.length === 1) {
+        try {
+          const configText = await readFileText(configFiles[0].id);
+          const config = validateRecordCollectionConfig(JSON.parse(configText));
+          collections.push({
+            folderId: folder.id,
+            folderName: folder.name,
+            name: config.name,
+            configFileId: configFiles[0].id,
+            recordTypeId: config.recordTypeId,
+          });
+          continue;
+        } catch {
+          // Fall through to legacy detection.
+        }
+      }
+
+      const legacyRecordType = template.recordTypes.find((candidate) => candidate.folderName === folder.name);
+      if (legacyRecordType) {
+        collections.push({
           folderId: folder.id,
           folderName: folder.name,
-        } satisfies ProfileRecordTypeFolder;
-      })
-      .filter((folder): folder is ProfileRecordTypeFolder => folder !== null);
+          name: legacyRecordType.label,
+          recordTypeId: legacyRecordType.id,
+        });
+      }
+    }
+
+    return collections;
+  },
+  async addRecordCollection(profile: ProfileRecord, request: CreateRecordCollectionRequest): Promise<ProfileRecordCollection> {
+    const template = getTemplateDefinition(profile.config.templateId);
+    const recordType = template.recordTypes.find((candidate) => candidate.id === request.recordTypeId);
+
+    if (!recordType) {
+      throw new Error("This collection template is not available for the selected profile.");
+    }
+
+    const nextName = request.name.trim();
+    if (!nextName) {
+      throw new Error("Collection name is required.");
+    }
+
+    const childFolders = await listChildFolders(profile.profileFolderId);
+    const existingFolder = childFolders.find((candidate) => candidate.name.toLowerCase() === nextName.toLowerCase());
+    if (existingFolder) {
+      throw new Error("A record collection with this name already exists in the selected profile.");
+    }
+
+    const createdFolder = await createFolder(nextName, profile.profileFolderId);
+    const config: RecordCollectionConfig = {
+      name: nextName,
+      recordTypeId: recordType.id,
+      createdAt: new Date().toISOString(),
+    };
+
+    await multipartUpload(
+      {
+        name: RECORD_COLLECTION_CONFIG_FILE_NAME,
+        parents: [createdFolder.id],
+        mimeType: "application/json",
+      },
+      new Blob([JSON.stringify(config, null, 2)], { type: "application/json" }),
+      RECORD_COLLECTION_CONFIG_FILE_NAME,
+    );
+
+    const configFiles = await listFiles<{ id: string; name: string }>({
+      q: `name='${RECORD_COLLECTION_CONFIG_FILE_NAME}' and '${createdFolder.id}' in parents and trashed=false`,
+      fields: "files(id,name)",
+    });
+
+    return {
+      folderId: createdFolder.id,
+      folderName: createdFolder.name,
+      name: nextName,
+      configFileId: configFiles[0]?.id,
+      recordTypeId: recordType.id,
+    };
   },
 };
 
 const records: RecordService = {
-  async listFolderFiles(_profile: ProfileRecord, folder: ProfileRecordTypeFolder): Promise<DriveFile[]> {
+  async listFolderFiles(_profile: ProfileRecord, collection: ProfileRecordCollection): Promise<DriveFile[]> {
     const files = await listFiles<DriveFile>({
-      q: `'${folder.folderId}' in parents and trashed=false`,
+      q: `'${collection.folderId}' in parents and trashed=false and name!='${RECORD_COLLECTION_CONFIG_FILE_NAME}'`,
       fields: "files(id,name,mimeType,createdTime,modifiedTime,size,capabilities/canDownload)",
       orderBy: "name_natural",
     });
@@ -517,7 +607,7 @@ const records: RecordService = {
     await multipartUpload(
       {
         name: request.storedFileName,
-        parents: [request.recordTypeFolder.folderId],
+        parents: [request.recordCollection.folderId],
       },
       request.file,
       request.storedFileName,

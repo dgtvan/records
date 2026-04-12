@@ -1,12 +1,13 @@
 import { getTemplateDefinition } from "../templates";
 import type {
   CreateProfileRequest,
+  CreateRecordCollectionRequest,
   DriveFile,
   ParsedRecord,
   PreviewDescriptor,
   ProfileRecord,
   ProfileListResult,
-  ProfileRecordTypeFolder,
+  ProfileRecordCollection,
   UploadRequest,
 } from "../types";
 import type {
@@ -28,11 +29,12 @@ const demoProfiles: ProfileRecord[] = [
       templateId: "health",
       createdAt: "2026-04-06T09:15:00Z",
     },
-    recordTypeFolders: [
+    recordCollections: [
       {
+        name: "Medical timeline",
         recordTypeId: "records",
-        folderId: "records-alice",
-        folderName: "records",
+        folderId: "collection-alice-medical",
+        folderName: "Medical timeline",
       },
     ],
   },
@@ -45,51 +47,48 @@ const demoProfiles: ProfileRecord[] = [
       templateId: "health",
       createdAt: "2026-04-08T10:30:00Z",
     },
-    recordTypeFolders: [
+    recordCollections: [
       {
+        name: "Lab archive",
         recordTypeId: "records",
-        folderId: "records-bob",
-        folderName: "records",
+        folderId: "collection-bob-labs",
+        folderName: "Lab archive",
       },
     ],
   },
 ];
 
-const demoRecordsByProfileId: Record<string, Record<string, DriveFile[]>> = {
-  "profile-alice": {
-    records: [
-      {
-        id: "record-1",
-        name: "2026-04-06_HealthCertificate.pdf",
-        mimeType: "application/pdf",
-        modifiedTime: "2026-04-06T12:00:00Z",
-        capabilities: { canDownload: true },
-      },
-      {
-        id: "record-2",
-        name: "2026-04-08_LabResult.png",
-        mimeType: "image/png",
-        modifiedTime: "2026-04-08T13:00:00Z",
-        capabilities: { canDownload: true },
-      },
-      {
-        id: "record-3",
-        name: "misc_scan.png",
-        mimeType: "image/png",
-        capabilities: { canDownload: true },
-      },
-    ],
-  },
-  "profile-bob": {
-    records: [
-      {
-        id: "record-4",
-        name: "2026-04-07_DoctorNote.pdf",
-        mimeType: "application/pdf",
-        capabilities: { canDownload: true },
-      },
-    ],
-  },
+const demoRecordsByCollectionId: Record<string, DriveFile[]> = {
+  "collection-alice-medical": [
+    {
+      id: "record-1",
+      name: "2026-04-06_HealthCertificate.pdf",
+      mimeType: "application/pdf",
+      modifiedTime: "2026-04-06T12:00:00Z",
+      capabilities: { canDownload: true },
+    },
+    {
+      id: "record-2",
+      name: "2026-04-08_LabResult.png",
+      mimeType: "image/png",
+      modifiedTime: "2026-04-08T13:00:00Z",
+      capabilities: { canDownload: true },
+    },
+    {
+      id: "record-3",
+      name: "misc_scan.png",
+      mimeType: "image/png",
+      capabilities: { canDownload: true },
+    },
+  ],
+  "collection-bob-labs": [
+    {
+      id: "record-4",
+      name: "2026-04-07_DoctorNote.pdf",
+      mimeType: "application/pdf",
+      capabilities: { canDownload: true },
+    },
+  ],
 };
 
 const auth: AuthService = {
@@ -139,8 +138,6 @@ const profiles: ProfileService = {
     };
   },
   async createProfile(request: CreateProfileRequest) {
-    const template = getTemplateDefinition(request.templateId);
-
     return {
       profileFolderId: `profile-${request.name.toLowerCase()}`,
       profileFolderName: request.name,
@@ -150,27 +147,47 @@ const profiles: ProfileService = {
         templateId: request.templateId,
         createdAt: new Date().toISOString(),
       },
-      recordTypeFolders: template.recordTypes.map((recordType) => ({
-        recordTypeId: recordType.id,
-        folderId: `${recordType.folderName}-${request.name.toLowerCase()}`,
-        folderName: recordType.folderName,
-      })),
+      recordCollections: [],
     };
   },
-  async listRecordTypeFolders(profile: ProfileRecord): Promise<ProfileRecordTypeFolder[]> {
-    return profile.recordTypeFolders;
+  async listRecordCollections(profile: ProfileRecord): Promise<ProfileRecordCollection[]> {
+    return profile.recordCollections;
+  },
+  async addRecordCollection(profile: ProfileRecord, request: CreateRecordCollectionRequest): Promise<ProfileRecordCollection> {
+    const template = getTemplateDefinition(profile.config.templateId);
+    const recordType = template.recordTypes.find((candidate) => candidate.id === request.recordTypeId);
+
+    if (!recordType) {
+      throw new Error("This collection template is not available for the selected profile.");
+    }
+
+    const nextName = request.name.trim();
+    if (!nextName) {
+      throw new Error("Collection name is required.");
+    }
+
+    const existingCollection = profile.recordCollections.find((collection) => collection.name.toLowerCase() === nextName.toLowerCase());
+    if (existingCollection) {
+      throw new Error("A record collection with this name already exists in the selected profile.");
+    }
+
+    return {
+      name: nextName,
+      recordTypeId: recordType.id,
+      folderId: `collection-${profile.profileFolderId}-${Date.now()}`,
+      folderName: nextName,
+    };
   },
 };
 
 const records: RecordService = {
-  async listFolderFiles(profile: ProfileRecord, folder: ProfileRecordTypeFolder) {
-    return demoRecordsByProfileId[profile.profileFolderId]?.[folder.recordTypeId] ?? [];
+  async listFolderFiles(_profile: ProfileRecord, collection: ProfileRecordCollection) {
+    return demoRecordsByCollectionId[collection.folderId] ?? [];
   },
   async uploadRecord(request: UploadRequest) {
-    const profileRecords = demoRecordsByProfileId[request.profile.profileFolderId] ?? {};
-    const recordTypeRecords = profileRecords[request.recordTypeFolder.recordTypeId] ?? [];
+    const collectionRecords = demoRecordsByCollectionId[request.recordCollection.folderId] ?? [];
 
-    recordTypeRecords.unshift({
+    collectionRecords.unshift({
       id: `uploaded-${Date.now()}`,
       name: request.storedFileName,
       mimeType: request.file.type || "application/octet-stream",
@@ -178,8 +195,7 @@ const records: RecordService = {
       capabilities: { canDownload: true },
     });
 
-    profileRecords[request.recordTypeFolder.recordTypeId] = recordTypeRecords;
-    demoRecordsByProfileId[request.profile.profileFolderId] = profileRecords;
+    demoRecordsByCollectionId[request.recordCollection.folderId] = collectionRecords;
     return;
   },
 };

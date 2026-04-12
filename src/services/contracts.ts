@@ -1,10 +1,11 @@
 import type {
   AppFolderState,
   CreateProfileRequest,
+  CreateRecordCollectionRequest,
   DriveFile,
   ParsedRecord,
   PreviewDescriptor,
-  ProfileRecordTypeFolder,
+  ProfileRecordCollection,
   ProfileListResult,
   ProfileRecord,
   UploadRequest,
@@ -29,11 +30,12 @@ export interface DriveBootstrapService {
 export interface ProfileService {
   listProfiles(): Promise<ProfileListResult>;
   createProfile(request: CreateProfileRequest): Promise<ProfileRecord>;
-  listRecordTypeFolders(profile: ProfileRecord): Promise<ProfileRecordTypeFolder[]>;
+  listRecordCollections(profile: ProfileRecord): Promise<ProfileRecordCollection[]>;
+  addRecordCollection(profile: ProfileRecord, request: CreateRecordCollectionRequest): Promise<ProfileRecordCollection>;
 }
 
 export interface RecordService {
-  listFolderFiles(profile: ProfileRecord, folder: ProfileRecordTypeFolder): Promise<DriveFile[]>;
+  listFolderFiles(profile: ProfileRecord, collection: ProfileRecordCollection): Promise<DriveFile[]>;
   uploadRecord(request: UploadRequest): Promise<void>;
 }
 

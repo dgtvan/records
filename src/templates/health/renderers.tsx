@@ -22,7 +22,7 @@ export function HealthTemplateSummaryCard({ intro, label }: TemplateSummaryCardP
   );
 }
 
-export function HealthActiveProfileRenderer({ profile, activeRecordType, groups }: TemplateHeaderRendererProps) {
+export function HealthActiveProfileRenderer({ profile, activeRecordCollection, activeRecordType, groups }: TemplateHeaderRendererProps) {
   const datedRecords = groups
     .filter((group) => !group.warning)
     .reduce((total, group) => total + group.items.length, 0);
@@ -31,7 +31,7 @@ export function HealthActiveProfileRenderer({ profile, activeRecordType, groups 
     <div className="active-profile-banner">
       <div>
         <strong>{profile.config.name}</strong>
-        <span>{activeRecordType.description}</span>
+        <span>{activeRecordCollection.name} · {activeRecordType.description}</span>
       </div>
       <div className="template-metrics">
         <span>{datedRecords} dated file(s)</span>
@@ -119,8 +119,8 @@ function HealthPreviewSurface({
 
 export function HealthTemplateWorkspace({
   profile,
+  activeRecordCollection,
   activeRecordType,
-  activeRecordTypeFolder,
   recordService,
   previewService,
 }: TemplateWorkspaceRendererProps) {
@@ -139,17 +139,17 @@ export function HealthTemplateWorkspace({
       setError(null);
 
       try {
-        const files = await recordService.listFolderFiles(profile, activeRecordTypeFolder);
+        const files = await recordService.listFolderFiles(profile, activeRecordCollection);
         setRecords(activeRecordType.parseFiles(files));
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Could not load this record type.");
+        setError(loadError instanceof Error ? loadError.message : "Could not load this record collection.");
       } finally {
         setLoading(false);
       }
     }
 
     void loadFolder();
-  }, [activeRecordType, activeRecordTypeFolder, profile, recordService]);
+  }, [activeRecordCollection, activeRecordType, profile, recordService]);
 
   useEffect(() => {
     return () => {
@@ -191,13 +191,13 @@ export function HealthTemplateWorkspace({
     try {
       await recordService.uploadRecord({
         profile,
-        recordTypeFolder: activeRecordTypeFolder,
+        recordCollection: activeRecordCollection,
         storedFileName: payload.storedFileName,
         date: payload.date,
         file: payload.file,
       });
 
-      const files = await recordService.listFolderFiles(profile, activeRecordTypeFolder);
+      const files = await recordService.listFolderFiles(profile, activeRecordCollection);
       setRecords(activeRecordType.parseFiles(files));
     } finally {
       setUploadBusy(false);
@@ -208,7 +208,7 @@ export function HealthTemplateWorkspace({
     <section className="panel stack timeline-panel">
       <div className="panel-header">
         <div>
-          <h2>{activeRecordType.label}</h2>
+          <h2>{activeRecordCollection.name}</h2>
           <p>{activeRecordType.description}</p>
         </div>
         <button className="ghost-button" type="button">
@@ -216,9 +216,9 @@ export function HealthTemplateWorkspace({
         </button>
       </div>
 
-      <HealthActiveProfileRenderer activeRecordType={activeRecordType} groups={groups} profile={profile} />
+      <HealthActiveProfileRenderer activeRecordCollection={activeRecordCollection} activeRecordType={activeRecordType} groups={groups} profile={profile} />
       <UploadPanel busy={uploadBusy} onSubmit={handleUpload} recordType={activeRecordType} />
-      {loading ? <p className="empty-state">Loading records for {activeRecordType.label.toLowerCase()}...</p> : null}
+      {loading ? <p className="empty-state">Loading {activeRecordCollection.name.toLowerCase()}...</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
       {!loading && !error ? (
         <HealthRecordTypeView

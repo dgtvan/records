@@ -169,7 +169,7 @@ select {
   display: flex;
   justify-content: space-between;
   gap: 14px;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .sidebar-eyebrow,
@@ -345,6 +345,25 @@ select {
   width: min(460px, 100%);
   padding: 22px;
   box-shadow: 0 24px 60px rgba(16, 35, 63, 0.18);
+}
+
+.popup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.popup-preview-box {
+  padding: 14px 16px;
+  border: 1px solid rgba(16, 35, 63, 0.09);
+  border-radius: 18px;
+  background: #f7fafc;
+}
+
+.popup-preview-box p {
+  margin: 4px 0 0;
+  color: #5b6b80;
 }
 
 .popup-header {
