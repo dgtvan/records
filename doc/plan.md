@@ -1,16 +1,8 @@
-# Family Records Timeline – Final Plan
+# Records Timeline – Final Plan
 
 ## 1. Product Goal
 
-Build a **static web app** that helps a family organize records stored in **Google Drive**.
-
-Records can mean many things, for example:
-
-- health certificates,
-- study certificates,
-- family vacation files,
-- household paperwork,
-- other personal or family records.
+Build a **static web app** that helps users organize records stored in **Google Drive**.
 
 The app helps by:
 
@@ -139,6 +131,11 @@ Users:
 
 ### Google Drive integration
 
+- OAuth model:
+  - Use Google Identity Services in the browser for sign-in and OAuth consent.
+  - Use the authorization code-free browser token flow suitable for a static SPA.
+  - Request tokens only from the client; do not introduce any backend token exchange in MVP.
+  - Attempt silent token refresh where available, and otherwise require the user to re-consent in the browser.
 - Use:
   - `files.list` to locate the app folder in Drive root and list contents.
   - `files.create` to create the app folder on first use.
@@ -160,10 +157,21 @@ Users:
   - Do not prefetch file content during timeline loading.
   - Do not rely on `webViewLink` or `webContentLink` for same-tab inline preview.
   - If Google Workspace files are supported later, use `files.export` for a supported export format.
-- Keep scopes minimal, but note that metadata-only scopes are not enough for previews because preview requires file-content download access.
+- OAuth scopes:
+  - Use `https://www.googleapis.com/auth/drive.file` for MVP.
+  - This scope is chosen because metadata-only scopes are insufficient for preview downloads, and full Drive scope is broader than needed for the intended app-owned workflow.
+  - The app should operate only on files and folders it creates or that the user explicitly opens through the app's workflow.
+  - If later requirements demand broad access to pre-existing arbitrary Drive files, that should be treated as a deliberate scope expansion and reviewed separately.
 - MVP file support:
   - Support uploaded binary files such as PDF, JPG, JPEG, and PNG.
   - Do not support Google Workspace native files in the MVP.
+
+### GitHub Pages deployment assumptions
+
+- The app is deployed as a static Vite build on GitHub Pages.
+- If the site is hosted under a repository subpath rather than a custom root domain, configure Vite `base` accordingly for production builds.
+- Register both local development origins and the final GitHub Pages origin in Google Cloud OAuth settings.
+- Treat the GitHub Pages origin as an environment-specific deployment detail, not as a hard-coded constant in application logic.
 
 ### App data structure
 
@@ -197,7 +205,11 @@ Rules:
 - The app stores profile configuration in a fixed `profile.json` file inside the profile folder.
 - Profile names are plain text and limited to 20 characters.
 - Profile names are trimmed, must not be empty, and must not contain slash characters.
+- Profile names are matched case-insensitively for duplicate detection in the app.
+- If a profile with the same normalized name already exists, the app blocks creation and shows a clear duplicate-name error.
 - If more than one `.simple-records-app-data` folder exists in Drive root, the app stops and shows an error until the user resolves the duplicate manually.
+- If a profile folder is missing `profile.json`, has an unreadable or invalid `profile.json`, or is missing its `records` folder, the app shows that profile as an issue instead of silently ignoring it.
+- Invalid profile folders are not selectable as the active profile until they are repaired manually or by a future repair workflow.
 
 ---
 
@@ -254,6 +266,8 @@ Upload behavior for MVP:
 - The user opens a profile, then selects a date and a local file.
 - The app generates the stored filename in the required format.
 - The app preserves the original filename after the date prefix.
+- If the generated filename already exists in the active profile's `records` folder, the app blocks the upload and shows a filename-collision error in MVP.
+- Automatic renaming or suffix-based conflict resolution is out of scope for MVP.
 
 ---
 
@@ -287,8 +301,10 @@ If certain file types cannot be embedded safely, the app gracefully shows a mess
   - the profile folder,
   - its `records` subfolder,
   - its fixed `profile.json` metadata file.
+- Before creating a profile, the app checks the existing profile list for a case-insensitive name collision.
 - If Drive creation succeeds, the profile becomes available in the app.
 - If Drive creation fails, the app shows an error and the profile is not added.
+- If a partially created profile folder structure is left behind after a failure, the app should report it as an invalid profile on the next refresh rather than treating it as healthy.
 - The user opens one profile at a time, and all timeline, upload, and preview actions are scoped to that active profile.
 
 ---
@@ -302,6 +318,8 @@ If certain file types cannot be embedded safely, the app gracefully shows a mess
 - The app uploads the file into the active profile’s `records` folder.
 - The app renames the stored file to match the required naming convention.
 - The app preserves the uploaded file extension.
+- The app checks for an existing file with the same generated name before upload.
+- If a collision is found, the app cancels the upload and asks the user to rename the local file or choose a different document date.
 - The uploaded file appears in the timeline after a successful refresh.
 
 ---
@@ -362,10 +380,14 @@ If certain file types cannot be embedded safely, the app gracefully shows a mess
 ## 12. Risks and Constraints
 
 - **OAuth setup** remains the main integration complexity.
+- **OAuth scope boundaries**: `drive.file` is sufficient for the intended app-owned workflow, but it will not behave like unrestricted Drive browsing.
 - **Preview authorization**: metadata-only scopes are insufficient for inline preview.
 - **App folder naming**: the app uses `.simple-records-app-data` and must stop with a clear error if duplicates already exist in Drive root.
+- **Profile integrity**: malformed profile folders must be surfaced as issues instead of being treated as usable profiles.
 - **Filename discipline**: if uploaded files stop following the date-prefix format, the timeline becomes incomplete and warnings increase.
+- **Filename collisions**: the MVP intentionally blocks duplicate generated filenames rather than inventing suffix rules.
 - **Profile creation** depends on Drive folder creation and `profile.json` creation succeeding before a profile becomes usable.
+- **Pages deployment path**: the Vite base path and OAuth allowed origins must match the actual GitHub Pages hosting path.
 - **Template design** can expand quickly in scope if template-specific behavior is made too deep too early.
 - **Template mutability** is intentionally out of scope for MVP; changing a profile template later should be treated as future work.
 - **Drive restrictions**: some file types cannot be embedded and must fall back gracefully inside the page.
@@ -377,7 +399,7 @@ If certain file types cannot be embedded safely, the app gracefully shows a mess
 
 The first release is successful if:
 
-- A family member can:
+- A user can:
   1. Sign in with Google.
   2. Let the app create or find `.simple-records-app-data` in Drive root.
   3. Let the app create or find the `profiles` folder.
