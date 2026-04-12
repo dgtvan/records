@@ -14,15 +14,11 @@ export function listTemplateDefinitions(): TemplateDefinition[] {
   return Object.values(TEMPLATE_MAP);
 }
 
-export function getTemplateRecordType(templateId: TemplateId, recordTypeId: string) {
-  return getTemplateDefinition(templateId).recordTypes.find((recordType) => recordType.id === recordTypeId) ?? null;
-}
-
 export type {
   TemplateDefinition,
   TemplateHeaderRendererProps,
-  TemplateRecordTypeDefinition,
-  TemplateRecordTypeRendererProps,
+  TemplateRendererProps,
   TemplateSummaryCardProps,
+  TemplateUploadDefinition,
   TemplateWorkspaceRendererProps,
 } from "./types";

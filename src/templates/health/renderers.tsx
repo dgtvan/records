@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { UploadPanel } from "../../components/UploadPanel";
 import type {
   TemplateHeaderRendererProps,
-  TemplateRecordTypeRendererProps,
+  TemplateRendererProps,
   TemplateSummaryCardProps,
   TemplateWorkspaceRendererProps,
 } from "../types";
@@ -22,7 +22,7 @@ export function HealthTemplateSummaryCard({ intro, label }: TemplateSummaryCardP
   );
 }
 
-export function HealthActiveProfileRenderer({ profile, activeRecordCollection, activeRecordType, groups }: TemplateHeaderRendererProps) {
+export function HealthActiveProfileRenderer({ profile, activeRecordCollection, activeTemplate, groups }: TemplateHeaderRendererProps) {
   const datedRecords = groups
     .filter((group) => !group.warning)
     .reduce((total, group) => total + group.items.length, 0);
@@ -31,7 +31,7 @@ export function HealthActiveProfileRenderer({ profile, activeRecordCollection, a
     <div className="active-profile-banner">
       <div>
         <strong>{profile.config.name}</strong>
-        <span>{activeRecordCollection.name} · {activeRecordType.description}</span>
+        <span>{activeRecordCollection.name} · {activeTemplate.description}</span>
       </div>
       <div className="template-metrics">
         <span>{datedRecords} dated file(s)</span>
@@ -41,17 +41,17 @@ export function HealthActiveProfileRenderer({ profile, activeRecordCollection, a
   );
 }
 
-export function HealthRecordTypeView({
+export function HealthTemplateView({
   groups,
   onOpenPreview,
   onClosePreview,
   preview,
   previewBusy,
-  recordType,
-}: TemplateRecordTypeRendererProps) {
+  template,
+}: TemplateRendererProps) {
   return (
     <div className="timeline-groups">
-      {groups.length === 0 ? <p className="empty-state">{recordType.emptyMessage}</p> : null}
+      {groups.length === 0 ? <p className="empty-state">{template.emptyMessage}</p> : null}
       {groups.map((group) => (
         <section className={group.warning ? "timeline-group warning" : "timeline-group"} key={group.key}>
           <div className="group-heading">
@@ -120,7 +120,7 @@ function HealthPreviewSurface({
 export function HealthTemplateWorkspace({
   profile,
   activeRecordCollection,
-  activeRecordType,
+  activeTemplate,
   recordService,
   previewService,
 }: TemplateWorkspaceRendererProps) {
@@ -131,7 +131,7 @@ export function HealthTemplateWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
 
-  const groups = useMemo(() => activeRecordType.buildGroups(records), [activeRecordType, records]);
+  const groups = useMemo(() => activeTemplate.buildGroups(records), [activeTemplate, records]);
 
   useEffect(() => {
     async function loadFolder() {
@@ -140,7 +140,7 @@ export function HealthTemplateWorkspace({
 
       try {
         const files = await recordService.listFolderFiles(profile, activeRecordCollection);
-        setRecords(activeRecordType.parseFiles(files));
+        setRecords(activeTemplate.parseFiles(files));
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load this record collection.");
       } finally {
@@ -149,7 +149,7 @@ export function HealthTemplateWorkspace({
     }
 
     void loadFolder();
-  }, [activeRecordCollection, activeRecordType, profile, recordService]);
+  }, [activeRecordCollection, activeTemplate, profile, recordService]);
 
   useEffect(() => {
     return () => {
@@ -198,7 +198,7 @@ export function HealthTemplateWorkspace({
       });
 
       const files = await recordService.listFolderFiles(profile, activeRecordCollection);
-      setRecords(activeRecordType.parseFiles(files));
+      setRecords(activeTemplate.parseFiles(files));
     } finally {
       setUploadBusy(false);
     }
@@ -209,19 +209,19 @@ export function HealthTemplateWorkspace({
       <div className="panel-header">
         <div>
           <h2>{activeRecordCollection.name}</h2>
-          <p>{activeRecordType.description}</p>
+          <p>{activeTemplate.description}</p>
         </div>
         <button className="ghost-button" type="button">
-          {activeRecordType.upload.submitLabel}
+          {activeTemplate.upload.submitLabel}
         </button>
       </div>
 
-      <HealthActiveProfileRenderer activeRecordCollection={activeRecordCollection} activeRecordType={activeRecordType} groups={groups} profile={profile} />
-      <UploadPanel busy={uploadBusy} onSubmit={handleUpload} recordType={activeRecordType} />
+      <HealthActiveProfileRenderer activeRecordCollection={activeRecordCollection} activeTemplate={activeTemplate} groups={groups} profile={profile} />
+      <UploadPanel busy={uploadBusy} onSubmit={handleUpload} template={activeTemplate} />
       {loading ? <p className="empty-state">Loading {activeRecordCollection.name.toLowerCase()}...</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
       {!loading && !error ? (
-        <HealthRecordTypeView
+        <HealthTemplateView
           groups={groups}
           onClosePreview={handleClosePreview}
           onOpenPreview={handleOpenPreview}
@@ -229,7 +229,7 @@ export function HealthTemplateWorkspace({
           preview={preview}
           previewBusy={previewBusy}
           records={records}
-          recordType={activeRecordType}
+          template={activeTemplate}
         />
       ) : null}
     </section>

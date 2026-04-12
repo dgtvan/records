@@ -1,5 +1,5 @@
 import type { UploadDraft } from "../../types";
-import type { TemplateRecordTypeUploadDefinition, TemplateUploadPlan } from "../types";
+import type { TemplateUploadDefinition, TemplateUploadPlan } from "../types";
 
 function normalizeBaseName(fileName: string): string {
   const trimmed = fileName.trim();
@@ -42,12 +42,12 @@ export function buildHealthUploadPlan(draft: UploadDraft): TemplateUploadPlan {
   };
 }
 
-export const healthUploadDefinition: TemplateRecordTypeUploadDefinition = {
+export const healthUploadDefinition: TemplateUploadDefinition = {
   accept: ".pdf,.png,.jpg,.jpeg",
   submitLabel: "Upload health record",
   dateLabel: "Document date",
   fileLabel: "Local file",
-  helperText: "Files are stored as YYYY-MM-DD_OriginalName.ext in the selected record-type folder.",
+  helperText: "Files are stored as YYYY-MM-DD_OriginalName.ext in the selected record collection.",
   validateDraft: validateHealthUploadDraft,
   buildUploadPlan: buildHealthUploadPlan,
 };

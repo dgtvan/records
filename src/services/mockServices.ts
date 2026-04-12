@@ -26,13 +26,12 @@ const demoProfiles: ProfileRecord[] = [
     configFileId: "config-alice",
     config: {
       name: "Alice",
-      templateId: "health",
       createdAt: "2026-04-06T09:15:00Z",
     },
     recordCollections: [
       {
         name: "Medical timeline",
-        recordTypeId: "records",
+        templateId: "health",
         folderId: "collection-alice-medical",
         folderName: "Medical timeline",
       },
@@ -44,13 +43,12 @@ const demoProfiles: ProfileRecord[] = [
     configFileId: "config-bob",
     config: {
       name: "Bob",
-      templateId: "health",
       createdAt: "2026-04-08T10:30:00Z",
     },
     recordCollections: [
       {
         name: "Lab archive",
-        recordTypeId: "records",
+        templateId: "health",
         folderId: "collection-bob-labs",
         folderName: "Lab archive",
       },
@@ -132,7 +130,7 @@ const profiles: ProfileService = {
         {
           profileFolderId: "broken-profile",
           profileFolderName: "LegacyImport",
-          message: "Missing profile.json. This folder should be surfaced as an issue, not loaded as a profile.",
+          message: "Missing _profile.json. This folder should be surfaced as an issue, not loaded as a profile.",
         },
       ],
     };
@@ -144,7 +142,6 @@ const profiles: ProfileService = {
       configFileId: `config-${request.name.toLowerCase()}`,
       config: {
         name: request.name,
-        templateId: request.templateId,
         createdAt: new Date().toISOString(),
       },
       recordCollections: [],
@@ -154,12 +151,7 @@ const profiles: ProfileService = {
     return profile.recordCollections;
   },
   async addRecordCollection(profile: ProfileRecord, request: CreateRecordCollectionRequest): Promise<ProfileRecordCollection> {
-    const template = getTemplateDefinition(profile.config.templateId);
-    const recordType = template.recordTypes.find((candidate) => candidate.id === request.recordTypeId);
-
-    if (!recordType) {
-      throw new Error("This collection template is not available for the selected profile.");
-    }
+    const template = getTemplateDefinition(request.templateId);
 
     const nextName = request.name.trim();
     if (!nextName) {
@@ -173,7 +165,7 @@ const profiles: ProfileService = {
 
     return {
       name: nextName,
-      recordTypeId: recordType.id,
+      templateId: template.id,
       folderId: `collection-${profile.profileFolderId}-${Date.now()}`,
       folderName: nextName,
     };
@@ -245,6 +237,3 @@ export const mockServices: RecordsAppServices = {
   preview,
 };
 
-export function describeTemplateForProfile(profile: ProfileRecord): string {
-  return getTemplateDefinition(profile.config.templateId).describeProfile(profile);
-}

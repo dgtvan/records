@@ -1,10 +1,10 @@
-import type { TemplateRecordTypeDefinition } from "../templates";
+import type { TemplateDefinition } from "../templates";
 import type { ProfileIssue } from "../types";
 
 interface RecordCollectionListItem {
   id: string;
   name: string;
-  recordType: TemplateRecordTypeDefinition;
+  template: TemplateDefinition;
 }
 
 interface AppSidebarProps {
@@ -77,7 +77,7 @@ export function AppSidebar({
                 type="button"
               >
                 <strong>{collection.name}</strong>
-                <span>{collection.recordType.label}</span>
+                <span>{collection.template.label}</span>
               </button>
             ))}
           </div>

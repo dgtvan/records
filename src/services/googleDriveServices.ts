@@ -43,6 +43,7 @@ interface DriveListResponse<T> {
 
 let currentSession: StoredAuthSession | null = loadStoredSession();
 let cachedFolders: AppFolderState | null = null;
+let ensureAppFoldersPromise: Promise<AppFolderState> | null = null;
 
 function hasValidSession(session: StoredAuthSession | null): session is StoredAuthSession {
   return Boolean(session && (!session.expiresAt || session.expiresAt > Date.now()));
@@ -233,6 +234,7 @@ async function driveFetch(path: string, init?: RequestInit, allowRefresh = true)
     }
 
     cachedFolders = null;
+    ensureAppFoldersPromise = null;
     throw new Error("Google session expired. Sign in again.");
   }
 
@@ -341,16 +343,12 @@ function validateProfileConfig(data: unknown): ProfileConfig {
   if (typeof candidate.name !== "string" || !candidate.name.trim()) {
     throw new Error(`${PROFILE_CONFIG_FILE_NAME} is missing a valid name.`);
   }
-  if (candidate.templateId !== "health") {
-    throw new Error(`${PROFILE_CONFIG_FILE_NAME} references an unsupported template.`);
-  }
   if (typeof candidate.createdAt !== "string" || !candidate.createdAt) {
     throw new Error(`${PROFILE_CONFIG_FILE_NAME} is missing createdAt.`);
   }
 
   return {
     name: candidate.name,
-    templateId: candidate.templateId,
     createdAt: candidate.createdAt,
   };
 }
@@ -364,8 +362,8 @@ function validateRecordCollectionConfig(data: unknown): RecordCollectionConfig {
   if (typeof candidate.name !== "string" || !candidate.name.trim()) {
     throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is missing a valid name.`);
   }
-  if (typeof candidate.recordTypeId !== "string" || !candidate.recordTypeId.trim()) {
-    throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is missing a valid recordTypeId.`);
+  if (candidate.templateId !== "health") {
+    throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} references an unsupported template.`);
   }
   if (typeof candidate.createdAt !== "string" || !candidate.createdAt) {
     throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is missing createdAt.`);
@@ -373,7 +371,7 @@ function validateRecordCollectionConfig(data: unknown): RecordCollectionConfig {
 
   return {
     name: candidate.name,
-    recordTypeId: candidate.recordTypeId,
+    templateId: candidate.templateId,
     createdAt: candidate.createdAt,
   };
 }
@@ -399,6 +397,7 @@ const auth: AuthService = {
 
     currentSession = null;
     cachedFolders = null;
+    ensureAppFoldersPromise = null;
     persistSession(null);
     clearGrantedAccess();
   },
@@ -410,24 +409,36 @@ const driveBootstrap: DriveBootstrapService = {
       return cachedFolders;
     }
 
-    const appFolders = await listFiles<{ id: string; name: string }>({
-      q: `name='${APP_FOLDER_NAME}' and mimeType='${FOLDER_MIME_TYPE}' and 'root' in parents and trashed=false`,
-      fields: "files(id,name)",
-    });
-
-    if (appFolders.length > 1) {
-      throw new Error(`Duplicate ${APP_FOLDER_NAME} folders found in Drive root. Resolve them before continuing.`);
+    if (ensureAppFoldersPromise) {
+      return ensureAppFoldersPromise;
     }
 
-    const appFolder = appFolders[0] ?? (await createFolder(APP_FOLDER_NAME));
-    const profilesFolder = await ensureProfilesFolder(appFolder.id);
+    ensureAppFoldersPromise = (async () => {
+      const appFolders = await listFiles<{ id: string; name: string }>({
+        q: `name='${APP_FOLDER_NAME}' and mimeType='${FOLDER_MIME_TYPE}' and 'root' in parents and trashed=false`,
+        fields: "files(id,name)",
+      });
 
-    cachedFolders = {
-      appFolder,
-      profilesFolder,
-    };
+      if (appFolders.length > 1) {
+        throw new Error(`Duplicate ${APP_FOLDER_NAME} folders found in Drive root. Resolve them before continuing.`);
+      }
 
-    return cachedFolders;
+      const appFolder = appFolders[0] ?? (await createFolder(APP_FOLDER_NAME));
+      const profilesFolder = await ensureProfilesFolder(appFolder.id);
+
+      cachedFolders = {
+        appFolder,
+        profilesFolder,
+      };
+
+      return cachedFolders;
+    })();
+
+    try {
+      return await ensureAppFoldersPromise;
+    } finally {
+      ensureAppFoldersPromise = null;
+    }
   },
 };
 
@@ -490,7 +501,6 @@ const profiles: ProfileService = {
 
     const config: ProfileConfig = {
       name: request.name,
-      templateId: request.templateId,
       createdAt: new Date().toISOString(),
     };
 
@@ -520,7 +530,6 @@ const profiles: ProfileService = {
   },
   async listRecordCollections(profile: ProfileRecord): Promise<ProfileRecordCollection[]> {
     const childFolders = await listChildFolders(profile.profileFolderId);
-    const template = getTemplateDefinition(profile.config.templateId);
     const collections: ProfileRecordCollection[] = [];
 
     for (const folder of childFolders) {
@@ -539,34 +548,19 @@ const profiles: ProfileService = {
             folderName: folder.name,
             name: config.name,
             configFileId: recognizedConfigFiles[0].id,
-            recordTypeId: config.recordTypeId,
+            templateId: config.templateId,
           });
           continue;
         } catch {
-          // Fall through to legacy detection.
+          continue;
         }
-      }
-
-      const legacyRecordType = template.recordTypes.find((candidate) => candidate.folderName === folder.name);
-      if (legacyRecordType) {
-        collections.push({
-          folderId: folder.id,
-          folderName: folder.name,
-          name: legacyRecordType.label,
-          recordTypeId: legacyRecordType.id,
-        });
       }
     }
 
     return collections;
   },
   async addRecordCollection(profile: ProfileRecord, request: CreateRecordCollectionRequest): Promise<ProfileRecordCollection> {
-    const template = getTemplateDefinition(profile.config.templateId);
-    const recordType = template.recordTypes.find((candidate) => candidate.id === request.recordTypeId);
-
-    if (!recordType) {
-      throw new Error("This collection template is not available for the selected profile.");
-    }
+    const template = getTemplateDefinition(request.templateId);
 
     const nextName = request.name.trim();
     if (!nextName) {
@@ -582,7 +576,7 @@ const profiles: ProfileService = {
     const createdFolder = await createFolder(nextName, profile.profileFolderId);
     const config: RecordCollectionConfig = {
       name: nextName,
-      recordTypeId: recordType.id,
+      templateId: template.id,
       createdAt: new Date().toISOString(),
     };
 
@@ -607,7 +601,7 @@ const profiles: ProfileService = {
       folderName: createdFolder.name,
       name: nextName,
       configFileId: configFiles[0]?.id,
-      recordTypeId: recordType.id,
+      templateId: template.id,
     };
   },
 };

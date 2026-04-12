@@ -1,7 +1,5 @@
 export type TemplateId = "health";
 
-export type RecordTypeId = string;
-
 export type ToastTone = "success" | "error" | "info";
 
 export interface ToastMessage {
@@ -34,13 +32,12 @@ export interface AppFolderState {
 
 export interface ProfileConfig {
   name: string;
-  templateId: TemplateId;
   createdAt: string;
 }
 
 export interface RecordCollectionConfig {
   name: string;
-  recordTypeId: RecordTypeId;
+  templateId: TemplateId;
   createdAt: string;
 }
 
@@ -49,7 +46,7 @@ export interface ProfileRecordCollection {
   folderName: string;
   name: string;
   configFileId?: string;
-  recordTypeId: RecordTypeId;
+  templateId: TemplateId;
 }
 
 export interface ProfileRecord {
@@ -107,12 +104,11 @@ export interface UploadRequest {
 
 export interface CreateProfileRequest {
   name: string;
-  templateId: TemplateId;
 }
 
 export interface CreateRecordCollectionRequest {
   name: string;
-  recordTypeId: RecordTypeId;
+  templateId: TemplateId;
 }
 
 export interface AppShellState {

@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
-import type { TemplateRecordTypeDefinition } from "../templates";
+import type { TemplateDefinition } from "../templates";
 import type { UploadDraft } from "../types";
 
 interface UploadPanelProps {
-  recordType: TemplateRecordTypeDefinition;
+  template: TemplateDefinition;
   busy?: boolean;
   onSubmit(payload: { date: string; file: File; storedFileName: string }): Promise<void>;
 }
 
-export function UploadPanel({ recordType, busy = false, onSubmit }: UploadPanelProps) {
+export function UploadPanel({ template, busy = false, onSubmit }: UploadPanelProps) {
   const [date, setDate] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -18,8 +18,8 @@ export function UploadPanel({ recordType, busy = false, onSubmit }: UploadPanelP
     fileName: file?.name ?? "",
   };
 
-  const validationIssues = useMemo(() => recordType.upload.validateDraft(draft), [draft, recordType]);
-  const uploadPlan = useMemo(() => recordType.upload.buildUploadPlan(draft), [draft, recordType]);
+  const validationIssues = useMemo(() => template.upload.validateDraft(draft), [draft, template]);
+  const uploadPlan = useMemo(() => template.upload.buildUploadPlan(draft), [draft, template]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,19 +46,19 @@ export function UploadPanel({ recordType, busy = false, onSubmit }: UploadPanelP
     <section className="panel stack upload-panel">
       <div className="panel-header">
         <div>
-          <h2>{recordType.upload.submitLabel}</h2>
-          <p>{recordType.upload.helperText}</p>
+          <h2>{template.upload.submitLabel}</h2>
+          <p>{template.upload.helperText}</p>
         </div>
       </div>
       <form className="stack" onSubmit={handleSubmit}>
         <label className="field-stack">
-          <span>{recordType.upload.dateLabel}</span>
+          <span>{template.upload.dateLabel}</span>
           <input onChange={(event) => setDate(event.target.value)} type="date" value={date} />
         </label>
         <label className="field-stack">
-          <span>{recordType.upload.fileLabel}</span>
+          <span>{template.upload.fileLabel}</span>
           <input
-            accept={recordType.upload.accept}
+            accept={template.upload.accept}
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             type="file"
           />
@@ -76,7 +76,7 @@ export function UploadPanel({ recordType, busy = false, onSubmit }: UploadPanelP
         ) : null}
         {submissionError ? <p className="error-text">{submissionError}</p> : null}
         <button className="ghost-button" disabled={busy || validationIssues.length > 0 || !file} type="submit">
-          {busy ? "Uploading..." : recordType.upload.submitLabel}
+          {busy ? "Uploading..." : template.upload.submitLabel}
         </button>
       </form>
     </section>

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AppSidebar } from "./components/AppSidebar";
 import { googleDriveServices } from "./services/googleDriveServices";
-import { getTemplateDefinition, getTemplateRecordType, listTemplateDefinitions } from "./templates";
+import { getTemplateDefinition, listTemplateDefinitions } from "./templates";
 import type {
   CreateRecordCollectionRequest,
   ProfileListResult,
@@ -25,11 +25,10 @@ function App() {
   const [createProfileBusy, setCreateProfileBusy] = useState(false);
   const [createRecordCollectionBusy, setCreateRecordCollectionBusy] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
-  const [newProfileTemplateId, setNewProfileTemplateId] = useState<TemplateId | "">("");
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const [addRecordCollectionPopupOpen, setAddRecordCollectionPopupOpen] = useState(false);
   const [newRecordCollectionName, setNewRecordCollectionName] = useState("");
-  const [newRecordCollectionTypeId, setNewRecordCollectionTypeId] = useState("");
+  const [newRecordCollectionTypeValue, setNewRecordCollectionTypeValue] = useState("");
   const [appError, setAppError] = useState<string | null>(null);
 
   const activeProfile = useMemo(
@@ -37,36 +36,39 @@ function App() {
     [activeProfileId, profiles],
   );
 
-  const activeTemplate = activeProfile ? getTemplateDefinition(activeProfile.config.templateId) : null;
+  const availableCollectionTemplates = useMemo(
+    () => templates.map((template) => ({
+      templateId: template.id,
+      templateLabel: template.label,
+      template,
+      value: template.id,
+    })),
+    [templates],
+  );
   const availableRecordCollections = useMemo(() => {
-    if (!activeTemplate || !activeProfile) {
+    if (!activeProfile) {
       return [];
     }
 
     return recordCollections
       .map((collection) => {
-        const recordType = getTemplateRecordType(activeProfile.config.templateId, collection.recordTypeId);
-        if (!recordType) {
-          return null;
-        }
+        const template = getTemplateDefinition(collection.templateId);
 
         return {
           id: collection.folderId,
           name: collection.name,
-          recordType,
+          template,
         };
       })
-      .filter((collection): collection is { id: string; name: string; recordType: NonNullable<ReturnType<typeof getTemplateRecordType>> } => collection !== null);
-  }, [activeProfile, activeTemplate, recordCollections]);
+      .filter((collection) => collection !== null);
+  }, [activeProfile, recordCollections]);
 
   const activeRecordCollection = useMemo(
     () => recordCollections.find((collection) => collection.folderId === activeRecordCollectionId),
     [activeRecordCollectionId, recordCollections],
   );
 
-  const activeRecordType = activeProfile && activeRecordCollection
-    ? getTemplateRecordType(activeProfile.config.templateId, activeRecordCollection.recordTypeId)
-    : null;
+  const activeTemplate = activeRecordCollection ? getTemplateDefinition(activeRecordCollection.templateId) : null;
 
   useEffect(() => {
     async function initialize() {
@@ -143,9 +145,11 @@ function App() {
     }
 
     const nextName = newRecordCollectionName.trim();
-    if (!nextName || !newRecordCollectionTypeId) {
+    if (!nextName || !newRecordCollectionTypeValue) {
       return;
     }
+
+    const templateId = newRecordCollectionTypeValue as TemplateId;
 
     setCreateRecordCollectionBusy(true);
     setAppError(null);
@@ -153,13 +157,13 @@ function App() {
     try {
       const createdCollection = await services.profiles.addRecordCollection(activeProfile, {
         name: nextName,
-        recordTypeId: newRecordCollectionTypeId,
+        templateId,
       } satisfies CreateRecordCollectionRequest);
 
       setRecordCollections((currentCollections) => [...currentCollections, createdCollection]);
       setActiveRecordCollectionId(createdCollection.folderId);
       setNewRecordCollectionName("");
-      setNewRecordCollectionTypeId("");
+      setNewRecordCollectionTypeValue("");
       setAddRecordCollectionPopupOpen(false);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : "Could not create record collection.");
@@ -172,7 +176,7 @@ function App() {
     event.preventDefault();
 
     const nextName = newProfileName.trim();
-    if (!nextName || !newProfileTemplateId) {
+    if (!nextName) {
       return;
     }
 
@@ -182,12 +186,10 @@ function App() {
     try {
       const createdProfile = await services.profiles.createProfile({
         name: nextName,
-        templateId: newProfileTemplateId,
       });
 
       setProfiles((currentProfiles) => [...currentProfiles, createdProfile]);
       setNewProfileName("");
-      setNewProfileTemplateId("");
       await selectProfile(createdProfile);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : "Could not create profile.");
@@ -284,7 +286,7 @@ function App() {
                   type="button"
                 >
                   <strong>{profile.config.name}</strong>
-                  <span>{getTemplateDefinition(profile.config.templateId).label}</span>
+                  <span>Open profile</span>
                 </button>
               ))}
             </div>
@@ -300,24 +302,9 @@ function App() {
                 />
               </label>
 
-              <label className="field-stack">
-                <span>Template</span>
-                <select
-                  onChange={(event) => setNewProfileTemplateId(event.target.value as TemplateId | "")}
-                  value={newProfileTemplateId}
-                >
-                  <option value="">Choose a template</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               <button
                 className="primary-button"
-                disabled={createProfileBusy || !newProfileName.trim() || !newProfileTemplateId}
+                disabled={createProfileBusy || !newProfileName.trim()}
                 type="submit"
               >
                 {createProfileBusy ? "Creating profile..." : "Add profile"}
@@ -343,7 +330,7 @@ function App() {
           activeProfileName={activeProfile.config.name}
           activeRecordCollectionId={activeRecordCollectionId}
           availableRecordCollections={availableRecordCollections}
-          canAddRecordCollection={Boolean(activeTemplate?.recordTypes.length)}
+          canAddRecordCollection={availableCollectionTemplates.length > 0}
           issues={issues}
           onOpenProfileSwitcher={() => {
             setAddRecordCollectionPopupOpen(false);
@@ -363,8 +350,8 @@ function App() {
               <p className="content-kicker">Drive-backed workspace</p>
               <h2>{activeProfile.config.name}</h2>
               <p>
-                {activeRecordType
-                  ? `Rendering ${activeRecordCollection?.name ?? activeRecordType.label} from the selected record collection.`
+                {activeTemplate
+                  ? `Rendering ${activeRecordCollection?.name ?? activeTemplate.label} from the selected record collection.`
                   : "Select a record collection from the left sidebar."}
               </p>
             </div>
@@ -377,11 +364,11 @@ function App() {
             </section>
           ) : null}
 
-          {activeTemplate && activeRecordType && activeRecordCollection ? (
+          {activeTemplate && activeRecordCollection ? (
             <>
               <activeTemplate.WorkspaceRenderer
                 activeRecordCollection={activeRecordCollection}
-                activeRecordType={activeRecordType}
+                activeTemplate={activeTemplate}
                 profile={activeProfile}
                 previewService={services.preview}
                 recordService={services.records}
@@ -398,7 +385,7 @@ function App() {
         </main>
       </div>
 
-      {activeProfile && activeTemplate && addRecordCollectionPopupOpen ? (
+      {activeProfile && addRecordCollectionPopupOpen ? (
         <div className="modal-backdrop" role="presentation">
           <section aria-label="Create record collection" className="popup-card" role="dialog">
             <div className="popup-header">
@@ -413,10 +400,10 @@ function App() {
               </button>
             </div>
 
-            {activeTemplate.recordTypes.length === 0 ? (
+            {availableCollectionTemplates.length === 0 ? (
               <div className="empty-picker-state compact-picker-state">
                 <strong>No collection templates available</strong>
-                <p>This profile template does not define any record collection templates yet.</p>
+                <p>No record collection templates are registered in this app yet.</p>
               </div>
             ) : (
               <form className="popup-form" onSubmit={(event) => void handleCreateRecordCollection(event)}>
@@ -433,28 +420,28 @@ function App() {
                 <label className="field-stack">
                   <span>Collection template</span>
                   <select
-                    onChange={(event) => setNewRecordCollectionTypeId(event.target.value)}
-                    value={newRecordCollectionTypeId}
+                    onChange={(event) => setNewRecordCollectionTypeValue(event.target.value)}
+                    value={newRecordCollectionTypeValue}
                   >
                     <option value="">Choose a template</option>
-                    {activeTemplate.recordTypes.map((recordType) => (
-                      <option key={recordType.id} value={recordType.id}>
-                        {recordType.label}
+                    {availableCollectionTemplates.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.templateLabel}
                       </option>
                     ))}
                   </select>
                 </label>
 
-                {newRecordCollectionTypeId ? (
+                {newRecordCollectionTypeValue ? (
                   <div className="popup-preview-box">
-                    <strong>{getTemplateRecordType(activeProfile.config.templateId, newRecordCollectionTypeId)?.label}</strong>
-                    <p>{getTemplateRecordType(activeProfile.config.templateId, newRecordCollectionTypeId)?.description}</p>
+                    <strong>{availableCollectionTemplates.find((option) => option.value === newRecordCollectionTypeValue)?.template.label}</strong>
+                    <p>{availableCollectionTemplates.find((option) => option.value === newRecordCollectionTypeValue)?.template.description}</p>
                   </div>
                 ) : null}
 
                 <button
                   className="primary-button"
-                  disabled={createRecordCollectionBusy || !newRecordCollectionName.trim() || !newRecordCollectionTypeId}
+                  disabled={createRecordCollectionBusy || !newRecordCollectionName.trim() || !newRecordCollectionTypeValue}
                   type="submit"
                 >
                   {createRecordCollectionBusy ? "Creating..." : "Create collection"}
