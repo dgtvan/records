@@ -131,7 +131,37 @@ select {
   padding: 18px;
 }
 
+.profile-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 4px;
+}
+
+.profile-avatar {
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border: 1px solid rgba(16, 35, 63, 0.12);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #edf3fb, #fefefe);
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #173456;
+}
+
+.profile-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: center;
+}
+
 .sidebar-top,
+.sidebar-section-head,
 .panel-header,
 .group-heading,
 .record-row,
@@ -261,6 +291,11 @@ select {
   color: #14365a;
 }
 
+.icon-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .warning-section {
   margin-top: auto;
   padding-top: 12px;
@@ -287,6 +322,80 @@ select {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(14, 26, 42, 0.34);
+  backdrop-filter: blur(8px);
+}
+
+.popup-card,
+.empty-picker-state {
+  border: 1px solid rgba(16, 35, 63, 0.09);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.popup-card {
+  width: min(460px, 100%);
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(16, 35, 63, 0.18);
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.popup-header h2 {
+  margin: 0;
+}
+
+.popup-option span,
+.empty-picker-state p,
+.popup-note {
+  margin: 0;
+  color: #5b6b80;
+}
+
+.popup-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.popup-option,
+.empty-picker-state {
+  padding: 14px 16px;
+}
+
+.popup-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid rgba(16, 35, 63, 0.09);
+  border-radius: 18px;
+  background: #fbfcfe;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.compact-picker-state {
+  margin-top: 18px;
+}
+
+.popup-note {
+  margin-top: 14px;
 }
 
 .content-shell {
@@ -434,11 +543,17 @@ select {
   }
 
   .sidebar-top,
+  .popup-header,
   .panel-header,
   .group-heading,
   .record-row,
   .active-profile-banner {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .profile-avatar {
+    width: 88px;
+    height: 88px;
   }
 }

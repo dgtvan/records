@@ -24,6 +24,8 @@ function App() {
   const [createProfileBusy, setCreateProfileBusy] = useState(false);
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileTemplateId, setNewProfileTemplateId] = useState<TemplateId | "">("");
+  const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
+  const [addRecordTypePickerOpen, setAddRecordTypePickerOpen] = useState(false);
   const [appError, setAppError] = useState<string | null>(null);
 
   const activeProfile = useMemo(
@@ -39,6 +41,15 @@ function App() {
 
     return activeTemplate.recordTypes.filter((recordType) =>
       recordTypeFolders.some((folder) => folder.recordTypeId === recordType.id),
+    );
+  }, [activeTemplate, recordTypeFolders]);
+  const remainingRecordTypes = useMemo(() => {
+    if (!activeTemplate) {
+      return [];
+    }
+
+    return activeTemplate.recordTypes.filter(
+      (recordType) => !recordTypeFolders.some((folder) => folder.recordTypeId === recordType.id),
     );
   }, [activeTemplate, recordTypeFolders]);
 
@@ -102,6 +113,8 @@ function App() {
     setActiveProfileId(profile.profileFolderId);
     setRecordTypeFolders([]);
     setActiveRecordTypeId(undefined);
+    setProfileSwitcherOpen(false);
+    setAddRecordTypePickerOpen(false);
 
     try {
       const nextRecordTypeFolders = await services.profiles.listRecordTypeFolders(profile);
@@ -287,15 +300,18 @@ function App() {
     <div className="app-shell">
       <div className="app-layout">
         <AppSidebar
-          activeProfileId={activeProfileId}
+          activeProfileName={activeProfile.config.name}
           activeRecordTypeId={activeRecordTypeId}
           availableRecordTypes={availableRecordTypes}
+          canAddRecordType={remainingRecordTypes.length > 0}
           issues={issues}
-          onSelectProfile={(profile) => void selectProfile(profile)}
+          onOpenProfileSwitcher={() => {
+            setAddRecordTypePickerOpen(false);
+            setProfileSwitcherOpen(true);
+          }}
+          onOpenAddRecordTypePicker={() => setAddRecordTypePickerOpen(true)}
           onSelectRecordType={(recordTypeId) => void handleSelectRecordType(recordTypeId)}
           onSignOut={() => void handleSignOut()}
-          profiles={profiles}
-          profilesBusy={profilesBusy}
         />
 
         <main className="content-shell">
@@ -338,6 +354,69 @@ function App() {
           )}
         </main>
       </div>
+
+      {activeProfile && activeTemplate && addRecordTypePickerOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-label="Add new record type" className="popup-card" role="dialog">
+            <div className="popup-header">
+              <div>
+                <p className="content-kicker">Add new record type</p>
+                <h2>Select a template</h2>
+              </div>
+              <button className="icon-button" onClick={() => setAddRecordTypePickerOpen(false)} title="Close" type="button">
+                <svg aria-hidden="true" className="sidebar-icon" viewBox="0 0 24 24">
+                  <path d="M7.4 6 6 7.4 10.6 12 6 16.6 7.4 18l4.6-4.6 4.6 4.6 1.4-1.4-4.6-4.6L18 7.4 16.6 6 12 10.6z" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
+
+            {remainingRecordTypes.length === 0 ? (
+              <div className="empty-picker-state compact-picker-state">
+                <strong>No more record types available</strong>
+                <p>All record type templates for this profile are already in the sidebar.</p>
+              </div>
+            ) : (
+              <div className="popup-options">
+                {remainingRecordTypes.map((recordType) => (
+                  <button className="popup-option" key={recordType.id} type="button">
+                    <strong>{recordType.label}</strong>
+                    <span>{recordType.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <p className="popup-note">UI preview only for now. Selecting a template is not wired to Drive yet.</p>
+          </section>
+        </div>
+      ) : null}
+
+      {activeProfile && profileSwitcherOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-label="Switch profile" className="popup-card" role="dialog">
+            <div className="popup-header">
+              <div>
+                <p className="content-kicker">Profiles</p>
+                <h2>Switch profile</h2>
+              </div>
+              <button className="icon-button" onClick={() => setProfileSwitcherOpen(false)} title="Close" type="button">
+                <svg aria-hidden="true" className="sidebar-icon" viewBox="0 0 24 24">
+                  <path d="M7.4 6 6 7.4 10.6 12 6 16.6 7.4 18l4.6-4.6 4.6 4.6 1.4-1.4-4.6-4.6L18 7.4 16.6 6 12 10.6z" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="popup-options">
+              {profiles.map((profile) => (
+                <button className="popup-option" key={profile.profileFolderId} onClick={() => void selectProfile(profile)} type="button">
+                  <strong>{profile.config.name}</strong>
+                  <span>{profile.profileFolderId === activeProfile.profileFolderId ? "Current profile" : "Switch to this profile"}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

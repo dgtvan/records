@@ -1,89 +1,78 @@
-import { getTemplateDefinition, type TemplateRecordTypeDefinition } from "../templates";
-import type { ProfileIssue, ProfileRecord } from "../types";
+import type { TemplateRecordTypeDefinition } from "../templates";
+import type { ProfileIssue } from "../types";
 
 interface AppSidebarProps {
-  profilesBusy: boolean;
-  profiles: ProfileRecord[];
   issues: ProfileIssue[];
-  activeProfileId?: string;
+  activeProfileName: string;
   availableRecordTypes: TemplateRecordTypeDefinition[];
   activeRecordTypeId?: string;
+  canAddRecordType: boolean;
+  onOpenProfileSwitcher(): void;
+  onOpenAddRecordTypePicker(): void;
   onSignOut(): void;
-  onSelectProfile(profile: ProfileRecord): void;
   onSelectRecordType(recordTypeId: string): void;
 }
 
 export function AppSidebar({
-  profilesBusy,
-  profiles,
   issues,
-  activeProfileId,
+  activeProfileName,
   availableRecordTypes,
   activeRecordTypeId,
+  canAddRecordType,
+  onOpenProfileSwitcher,
+  onOpenAddRecordTypePicker,
   onSignOut,
-  onSelectProfile,
   onSelectRecordType,
 }: AppSidebarProps) {
-  const activeProfile = profiles.find((profile) => profile.profileFolderId === activeProfileId);
-  const activeTemplate = activeProfile ? getTemplateDefinition(activeProfile.config.templateId) : null;
+  const profileInitials = activeProfileName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "P";
 
   return (
     <aside className="sidebar-shell">
       <div className="sidebar-card app-sidebar">
-        <div className="sidebar-top">
+        {/* <div className="sidebar-top">
           <div>
             <p className="sidebar-eyebrow">Google Drive Records</p>
             <h1 className="sidebar-title">Records Timeline</h1>
           </div>
-        </div>
+        </div> */}
 
-        <section className="sidebar-section">
-          <div>
-            <h2 className="sidebar-section-title">Profile</h2>
-            <p className="sidebar-note">{activeProfile ? `${activeProfile.config.name} · ${activeTemplate?.label ?? "Unknown template"}` : "Profile selection"}</p>
-          </div>
-          <div className="sidebar-list">
-            {profilesBusy ? <p className="sidebar-empty">Loading profiles...</p> : null}
-            {!profilesBusy && profiles.length === 0 ? <p className="sidebar-empty">No profiles found in Drive.</p> : null}
-            {!profilesBusy
-              ? profiles.map((profile) => (
-                  <button
-                    className={profile.profileFolderId === activeProfileId ? "sidebar-item active" : "sidebar-item"}
-                    key={profile.profileFolderId}
-                    onClick={() => onSelectProfile(profile)}
-                    type="button"
-                  >
-                    <strong>{profile.config.name}</strong>
-                    <span>{getTemplateDefinition(profile.config.templateId).label}</span>
-                  </button>
-                ))
-              : null}
-          </div>
+        <section className="profile-hero" aria-label="Current profile">
+          <div className="profile-avatar">{profileInitials}</div>
+          <p className="profile-name">{activeProfileName}</p>
         </section>
 
         <section className="sidebar-section">
-          <div>
+          <div className="sidebar-section-head">
             <h2 className="sidebar-section-title">Record Types</h2>
-            <p className="sidebar-note">Select a folder-backed record type. Nothing is auto-opened.</p>
+            <button
+              className="icon-button compact-icon-button"
+              disabled={!canAddRecordType}
+              onClick={onOpenAddRecordTypePicker}
+              title="Add record type"
+              type="button"
+            >
+              <svg aria-hidden="true" className="sidebar-icon" viewBox="0 0 24 24">
+                <path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z" fill="currentColor" />
+              </svg>
+            </button>
           </div>
           <div className="sidebar-list">
-            {!activeProfile ? <p className="sidebar-empty">Choose a profile first.</p> : null}
-            {activeProfile && availableRecordTypes.length === 0 ? (
-              <p className="sidebar-empty">No recognized record type folders in this profile.</p>
-            ) : null}
-            {activeProfile
-              ? availableRecordTypes.map((recordType) => (
-                  <button
-                    className={recordType.id === activeRecordTypeId ? "sidebar-item active" : "sidebar-item"}
-                    key={recordType.id}
-                    onClick={() => onSelectRecordType(recordType.id)}
-                    type="button"
-                  >
-                    <strong>{recordType.label}</strong>
-                    <span>{recordType.description}</span>
-                  </button>
-                ))
-              : null}
+            {availableRecordTypes.length === 0 ? <p className="sidebar-empty">No recognized record type folders in this profile.</p> : null}
+            {availableRecordTypes.map((recordType) => (
+              <button
+                className={recordType.id === activeRecordTypeId ? "sidebar-item active" : "sidebar-item"}
+                key={recordType.id}
+                onClick={() => onSelectRecordType(recordType.id)}
+                type="button"
+              >
+                <strong>{recordType.label}</strong>
+              </button>
+            ))}
           </div>
         </section>
 
@@ -102,6 +91,11 @@ export function AppSidebar({
         ) : null}
 
         <div className="sidebar-footer-actions">
+          <button className="icon-button" onClick={onOpenProfileSwitcher} title="Switch profile" type="button">
+            <svg aria-hidden="true" className="sidebar-icon" viewBox="0 0 24 24">
+              <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.2 0-7 2.1-7 5v1h9.5a6.8 6.8 0 0 1-.5-2.5c0-1 .2-1.8.5-2.5zM19 14v2h-2v2h2v2h2v-2h2v-2h-2v-2z" fill="currentColor" />
+            </svg>
+          </button>
           <button className="icon-button" title="Settings coming soon" type="button">
             <svg aria-hidden="true" className="sidebar-icon" viewBox="0 0 24 24">
               <path

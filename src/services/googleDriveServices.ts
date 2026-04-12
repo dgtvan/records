@@ -20,12 +20,14 @@ import type {
   RecordsAppServices,
 } from "./contracts";
 
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email";
 const DRIVE_API_ROOT = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_ROOT = "https://www.googleapis.com/upload/drive/v3/files";
+const USER_INFO_API = "https://www.googleapis.com/oauth2/v2/userinfo";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const PROFILE_CONFIG_FILE_NAME = "profile.json";
 const SESSION_STORAGE_KEY = "records-timeline-auth-session";
+const AUTH_GRANTED_STORAGE_KEY = "records-timeline-auth-granted";
 const APP_FOLDER_NAME = import.meta.env.VITE_GOOGLE_APP_FOLDER_NAME || ".simple-records-app-data";
 
 interface StoredAuthSession extends AuthSession {
@@ -39,6 +41,22 @@ interface DriveListResponse<T> {
 let currentSession: StoredAuthSession | null = loadStoredSession();
 let cachedFolders: AppFolderState | null = null;
 
+function hasValidSession(session: StoredAuthSession | null): session is StoredAuthSession {
+  return Boolean(session && (!session.expiresAt || session.expiresAt > Date.now()));
+}
+
+function hasGrantedAccess(): boolean {
+  return window.localStorage.getItem(AUTH_GRANTED_STORAGE_KEY) === "true";
+}
+
+function persistGrantedAccess() {
+  window.localStorage.setItem(AUTH_GRANTED_STORAGE_KEY, "true");
+}
+
+function clearGrantedAccess() {
+  window.localStorage.removeItem(AUTH_GRANTED_STORAGE_KEY);
+}
+
 function loadStoredSession(): StoredAuthSession | null {
   const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!raw) {
@@ -47,7 +65,7 @@ function loadStoredSession(): StoredAuthSession | null {
 
   try {
     const parsed = JSON.parse(raw) as StoredAuthSession;
-    if (parsed.expiresAt && parsed.expiresAt <= Date.now()) {
+    if (!hasValidSession(parsed)) {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return null;
     }
@@ -66,6 +84,7 @@ function persistSession(session: StoredAuthSession | null) {
   }
 
   window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  persistGrantedAccess();
 }
 
 async function waitForGoogle(): Promise<GoogleNamespace> {
@@ -99,6 +118,21 @@ function requireClientId(): string {
   return clientId;
 }
 
+async function fetchUserEmail(accessToken: string): Promise<string | undefined> {
+  const response = await fetch(USER_INFO_API, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    return undefined;
+  }
+
+  const payload = (await response.json()) as { email?: string };
+  return payload.email;
+}
+
 async function requestAccessToken(prompt: string): Promise<StoredAuthSession> {
   const google = await waitForGoogle();
 
@@ -112,15 +146,23 @@ async function requestAccessToken(prompt: string): Promise<StoredAuthSession> {
           return;
         }
 
-        const expiresAt = response.expires_in ? Date.now() + response.expires_in * 1000 : undefined;
-        const session: StoredAuthSession = {
-          accessToken: response.access_token,
-          expiresAt,
-        };
+        void (async () => {
+          try {
+            const expiresAt = response.expires_in ? Date.now() + response.expires_in * 1000 : undefined;
+            const userEmail = await fetchUserEmail(response.access_token);
+            const session: StoredAuthSession = {
+              accessToken: response.access_token,
+              expiresAt,
+              userEmail,
+            };
 
-        currentSession = session;
-        persistSession(session);
-        resolve(session);
+            currentSession = session;
+            persistSession(session);
+            resolve(session);
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error("Google sign-in failed."));
+          }
+        })();
       },
     });
 
@@ -128,12 +170,36 @@ async function requestAccessToken(prompt: string): Promise<StoredAuthSession> {
   });
 }
 
+async function refreshSessionSilently(): Promise<StoredAuthSession | null> {
+  if (!hasGrantedAccess()) {
+    return null;
+  }
+
+  try {
+    return await requestAccessToken("");
+  } catch {
+    return null;
+  }
+}
+
+async function signInWithFallback(): Promise<StoredAuthSession> {
+  if (!hasGrantedAccess()) {
+    return requestAccessToken("consent");
+  }
+
+  try {
+    return await requestAccessToken("");
+  } catch {
+    return requestAccessToken("consent");
+  }
+}
+
 function getValidSession(): StoredAuthSession {
   if (!currentSession) {
     throw new Error("Sign in with Google to continue.");
   }
 
-  if (currentSession.expiresAt && currentSession.expiresAt <= Date.now()) {
+  if (!hasValidSession(currentSession)) {
     currentSession = null;
     persistSession(null);
     throw new Error("Your Google session expired. Sign in again.");
@@ -142,7 +208,7 @@ function getValidSession(): StoredAuthSession {
   return currentSession;
 }
 
-async function driveFetch(path: string, init?: RequestInit): Promise<Response> {
+async function driveFetch(path: string, init?: RequestInit, allowRefresh = true): Promise<Response> {
   const session = getValidSession();
   const headers = new Headers(init?.headers);
   headers.set("Authorization", `Bearer ${session.accessToken}`);
@@ -154,8 +220,16 @@ async function driveFetch(path: string, init?: RequestInit): Promise<Response> {
 
   if (response.status === 401) {
     currentSession = null;
-    cachedFolders = null;
     persistSession(null);
+
+    if (allowRefresh) {
+      const refreshedSession = await refreshSessionSilently();
+      if (refreshedSession) {
+        return driveFetch(path, init, false);
+      }
+    }
+
+    cachedFolders = null;
     throw new Error("Google session expired. Sign in again.");
   }
 
@@ -260,10 +334,16 @@ function validateProfileConfig(data: unknown): ProfileConfig {
 
 const auth: AuthService = {
   async getSession() {
-    return currentSession;
+    if (hasValidSession(currentSession)) {
+      return currentSession;
+    }
+
+    currentSession = null;
+    persistSession(null);
+    return refreshSessionSilently();
   },
   async signIn() {
-    return requestAccessToken("consent");
+    return signInWithFallback();
   },
   async signOut() {
     if (currentSession?.accessToken) {
@@ -274,6 +354,7 @@ const auth: AuthService = {
     currentSession = null;
     cachedFolders = null;
     persistSession(null);
+    clearGrantedAccess();
   },
 };
 
