@@ -27,8 +27,8 @@ const DRIVE_API_ROOT = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_ROOT = "https://www.googleapis.com/upload/drive/v3/files";
 const USER_INFO_API = "https://www.googleapis.com/oauth2/v2/userinfo";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
-const PROFILE_CONFIG_FILE_NAME = "profile.json";
-const RECORD_COLLECTION_CONFIG_FILE_NAME = "record-collection.json";
+const PROFILE_CONFIG_FILE_NAME = "_profile.json";
+const RECORD_COLLECTION_CONFIG_FILE_NAME = "_collection.json";
 const SESSION_STORAGE_KEY = "records-timeline-auth-session";
 const AUTH_GRANTED_STORAGE_KEY = "records-timeline-auth-granted";
 const APP_FOLDER_NAME = import.meta.env.VITE_GOOGLE_APP_FOLDER_NAME || ".simple-records-app-data";
@@ -245,10 +245,22 @@ async function driveFetch(path: string, init?: RequestInit, allowRefresh = true)
 }
 
 async function listFiles<T>(params: Record<string, string>): Promise<T[]> {
-  const search = new URLSearchParams(params);
+  const search = new URLSearchParams({
+    orderBy: "name_natural",
+    ...params,
+  });
   const response = await driveFetch(`${DRIVE_API_ROOT}/files?${search.toString()}`);
   const payload = (await response.json()) as DriveListResponse<T>;
   return payload.files;
+}
+
+async function listNamedFiles<T>(parentId: string, names: string[], fields: string): Promise<T[]> {
+  const quotedNames = names.map((name) => `name='${name}'`).join(" or ");
+
+  return listFiles<T>({
+    q: `(${quotedNames}) and '${parentId}' in parents and trashed=false`,
+    fields,
+  });
 }
 
 async function createFolder(name: string, parentId?: string): Promise<{ id: string; name: string }> {
@@ -322,18 +334,18 @@ async function ensureProfilesFolder(appFolderId: string): Promise<{ id: string; 
 
 function validateProfileConfig(data: unknown): ProfileConfig {
   if (!data || typeof data !== "object") {
-    throw new Error("profile.json is not a valid object.");
+    throw new Error(`${PROFILE_CONFIG_FILE_NAME} is not a valid object.`);
   }
 
   const candidate = data as Partial<ProfileConfig>;
   if (typeof candidate.name !== "string" || !candidate.name.trim()) {
-    throw new Error("profile.json is missing a valid name.");
+    throw new Error(`${PROFILE_CONFIG_FILE_NAME} is missing a valid name.`);
   }
   if (candidate.templateId !== "health") {
-    throw new Error("profile.json references an unsupported template.");
+    throw new Error(`${PROFILE_CONFIG_FILE_NAME} references an unsupported template.`);
   }
   if (typeof candidate.createdAt !== "string" || !candidate.createdAt) {
-    throw new Error("profile.json is missing createdAt.");
+    throw new Error(`${PROFILE_CONFIG_FILE_NAME} is missing createdAt.`);
   }
 
   return {
@@ -345,18 +357,18 @@ function validateProfileConfig(data: unknown): ProfileConfig {
 
 function validateRecordCollectionConfig(data: unknown): RecordCollectionConfig {
   if (!data || typeof data !== "object") {
-    throw new Error("record-collection.json is not a valid object.");
+    throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is not a valid object.`);
   }
 
   const candidate = data as Partial<RecordCollectionConfig>;
   if (typeof candidate.name !== "string" || !candidate.name.trim()) {
-    throw new Error("record-collection.json is missing a valid name.");
+    throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is missing a valid name.`);
   }
   if (typeof candidate.recordTypeId !== "string" || !candidate.recordTypeId.trim()) {
-    throw new Error("record-collection.json is missing a valid recordTypeId.");
+    throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is missing a valid recordTypeId.`);
   }
   if (typeof candidate.createdAt !== "string" || !candidate.createdAt) {
-    throw new Error("record-collection.json is missing createdAt.");
+    throw new Error(`${RECORD_COLLECTION_CONFIG_FILE_NAME} is missing createdAt.`);
   }
 
   return {
@@ -432,28 +444,32 @@ const profiles: ProfileService = {
     const issues: ProfileIssue[] = [];
 
     for (const folder of folders) {
-      const configFiles = await listFiles<{ id: string; name: string }>({
-        q: `name='${PROFILE_CONFIG_FILE_NAME}' and '${folder.id}' in parents and trashed=false`,
-        fields: "files(id,name)",
-      });
+      const recognizedConfigFiles = await listNamedFiles<{ id: string; name: string }>(
+        folder.id,
+        [PROFILE_CONFIG_FILE_NAME],
+        "files(id,name)",
+      );
 
-      if (configFiles.length !== 1) {
+      if (recognizedConfigFiles.length !== 1) {
         issues.push({
           profileFolderId: folder.id,
           profileFolderName: folder.name,
-          message: configFiles.length === 0 ? "Missing profile.json." : "Duplicate profile.json files found.",
+          message:
+            recognizedConfigFiles.length === 0
+              ? `Missing ${PROFILE_CONFIG_FILE_NAME}.`
+              : `Duplicate ${PROFILE_CONFIG_FILE_NAME} files found.`,
         });
         continue;
       }
 
       try {
-        const configText = await readFileText(configFiles[0].id);
+        const configText = await readFileText(recognizedConfigFiles[0].id);
         const config = validateProfileConfig(JSON.parse(configText));
 
         profileRecords.push({
           profileFolderId: folder.id,
           profileFolderName: folder.name,
-          configFileId: configFiles[0].id,
+          configFileId: recognizedConfigFiles[0].id,
           config,
           recordCollections: [],
         });
@@ -488,10 +504,11 @@ const profiles: ProfileService = {
       PROFILE_CONFIG_FILE_NAME,
     );
 
-    const configFiles = await listFiles<{ id: string; name: string }>({
-      q: `name='${PROFILE_CONFIG_FILE_NAME}' and '${profileFolder.id}' in parents and trashed=false`,
-      fields: "files(id,name)",
-    });
+    const configFiles = await listNamedFiles<{ id: string; name: string }>(
+      profileFolder.id,
+      [PROFILE_CONFIG_FILE_NAME],
+      "files(id,name)",
+    );
 
     return {
       profileFolderId: profileFolder.id,
@@ -507,20 +524,21 @@ const profiles: ProfileService = {
     const collections: ProfileRecordCollection[] = [];
 
     for (const folder of childFolders) {
-      const configFiles = await listFiles<{ id: string; name: string }>({
-        q: `name='${RECORD_COLLECTION_CONFIG_FILE_NAME}' and '${folder.id}' in parents and trashed=false`,
-        fields: "files(id,name)",
-      });
+      const recognizedConfigFiles = await listNamedFiles<{ id: string; name: string }>(
+        folder.id,
+        [RECORD_COLLECTION_CONFIG_FILE_NAME],
+        "files(id,name)",
+      );
 
-      if (configFiles.length === 1) {
+      if (recognizedConfigFiles.length === 1) {
         try {
-          const configText = await readFileText(configFiles[0].id);
+          const configText = await readFileText(recognizedConfigFiles[0].id);
           const config = validateRecordCollectionConfig(JSON.parse(configText));
           collections.push({
             folderId: folder.id,
             folderName: folder.name,
             name: config.name,
-            configFileId: configFiles[0].id,
+            configFileId: recognizedConfigFiles[0].id,
             recordTypeId: config.recordTypeId,
           });
           continue;
@@ -578,10 +596,11 @@ const profiles: ProfileService = {
       RECORD_COLLECTION_CONFIG_FILE_NAME,
     );
 
-    const configFiles = await listFiles<{ id: string; name: string }>({
-      q: `name='${RECORD_COLLECTION_CONFIG_FILE_NAME}' and '${createdFolder.id}' in parents and trashed=false`,
-      fields: "files(id,name)",
-    });
+    const configFiles = await listNamedFiles<{ id: string; name: string }>(
+      createdFolder.id,
+      [RECORD_COLLECTION_CONFIG_FILE_NAME],
+      "files(id,name)",
+    );
 
     return {
       folderId: createdFolder.id,
