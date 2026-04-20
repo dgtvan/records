@@ -107,6 +107,17 @@ For the current implementation, redirect URIs are not used. You can leave Author
 
 You also do not need to enter scopes in the client form. The app requests the Drive scope at runtime.
 
+If you enable the local backend auth mode for development, this changes:
+
+- Authorized redirect URIs must include the exact dev backend callback URL.
+- Typical value: `http://localhost:5174/api/dev-auth/callback`
+- If you configure the dev backend to use `127.0.0.1` instead, register `http://127.0.0.1:5174/api/dev-auth/callback` instead.
+
+Important:
+
+- `localhost` and `127.0.0.1` are different redirect URIs to Google.
+- The value in Google must match the value used by the local auth backend exactly.
+
 ## 5. Copy the client ID into the app
 
 After creating the OAuth client, Google will show a client ID that looks like this:

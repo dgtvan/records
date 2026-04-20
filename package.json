@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:cleanup": "node ./scripts/kill-dev-ports.mjs",
+    "dev:auth": "node ./scripts/dev-auth-server.mjs",
+    "dev:local": "npm run dev:cleanup && concurrently -k -n auth,web -c yellow,cyan \"npm:dev:auth\" \"npm:dev\"",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
@@ -13,9 +16,12 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^22.15.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "dotenv": "^16.4.7",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   }

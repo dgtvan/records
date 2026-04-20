@@ -34,6 +34,7 @@ interface Window {
 interface ImportMetaEnv {
   readonly VITE_GOOGLE_CLIENT_ID: string;
   readonly VITE_GOOGLE_APP_FOLDER_NAME?: string;
+  readonly VITE_DEV_AUTH_MODE?: string;
 }
 
 interface ImportMeta {

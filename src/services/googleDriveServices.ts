@@ -32,6 +32,10 @@ const RECORD_COLLECTION_CONFIG_FILE_NAME = "_collection.json";
 const SESSION_STORAGE_KEY = "records-timeline-auth-session";
 const AUTH_GRANTED_STORAGE_KEY = "records-timeline-auth-granted";
 const APP_FOLDER_NAME = import.meta.env.VITE_GOOGLE_APP_FOLDER_NAME || ".simple-records-app-data";
+const DEV_BACKEND_AUTH_ENABLED = import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH_MODE === "backend";
+const DEV_AUTH_SESSION_PATH = "/api/dev-auth/session";
+const DEV_AUTH_LOGIN_PATH = "/api/dev-auth/login";
+const DEV_AUTH_LOGOUT_PATH = "/api/dev-auth/logout";
 
 interface StoredAuthSession extends AuthSession {
   expiresAt?: number;
@@ -39,6 +43,12 @@ interface StoredAuthSession extends AuthSession {
 
 interface DriveListResponse<T> {
   files: T[];
+}
+
+interface DevBackendSessionResponse {
+  accessToken: string;
+  expiresAt?: number;
+  userEmail?: string;
 }
 
 let currentSession: StoredAuthSession | null = loadStoredSession();
@@ -89,6 +99,49 @@ function persistSession(session: StoredAuthSession | null) {
 
   window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   persistGrantedAccess();
+}
+
+async function requestDevBackendSession(): Promise<StoredAuthSession> {
+  let response: Response;
+
+  try {
+    response = await fetch(DEV_AUTH_SESSION_PATH, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+  } catch {
+    throw new Error("Local development auth server is unavailable. Start `npm run dev:local` and configure `.env.local`.");
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || "Local development auth server could not mint a Google access token.");
+  }
+
+  const payload = (await response.json()) as DevBackendSessionResponse;
+  if (!payload.accessToken) {
+    throw new Error("Local development auth server returned an invalid Google access token payload.");
+  }
+
+  const session: StoredAuthSession = {
+    accessToken: payload.accessToken,
+    expiresAt: payload.expiresAt,
+    userEmail: payload.userEmail,
+  };
+
+  currentSession = session;
+  persistSession(session);
+  return session;
+}
+
+function beginDevBackendSignIn(): never {
+  const loginUrl = new URL(DEV_AUTH_LOGIN_PATH, window.location.origin);
+  loginUrl.searchParams.set("returnTo", window.location.href);
+  window.location.assign(loginUrl.toString());
+
+  return new Promise<never>(() => undefined) as never;
 }
 
 async function waitForGoogle(): Promise<GoogleNamespace> {
@@ -175,6 +228,14 @@ async function requestAccessToken(prompt: string): Promise<StoredAuthSession> {
 }
 
 async function refreshSessionSilently(): Promise<StoredAuthSession | null> {
+  if (DEV_BACKEND_AUTH_ENABLED) {
+    try {
+      return await requestDevBackendSession();
+    } catch {
+      return null;
+    }
+  }
+
   if (!hasGrantedAccess()) {
     return null;
   }
@@ -187,6 +248,10 @@ async function refreshSessionSilently(): Promise<StoredAuthSession | null> {
 }
 
 async function signInWithFallback(): Promise<StoredAuthSession> {
+  if (DEV_BACKEND_AUTH_ENABLED) {
+    return requestDevBackendSession();
+  }
+
   if (!hasGrantedAccess()) {
     return requestAccessToken("consent");
   }
@@ -382,14 +447,40 @@ const auth: AuthService = {
       return currentSession;
     }
 
+    if (DEV_BACKEND_AUTH_ENABLED) {
+      currentSession = null;
+      persistSession(null);
+      return requestDevBackendSession();
+    }
+
+    if (hasValidSession(currentSession)) {
+      return currentSession;
+    }
+
     currentSession = null;
     persistSession(null);
     return refreshSessionSilently();
   },
   async signIn() {
+    if (DEV_BACKEND_AUTH_ENABLED) {
+      return beginDevBackendSignIn();
+    }
+
     return signInWithFallback();
   },
   async signOut() {
+    if (DEV_BACKEND_AUTH_ENABLED) {
+      await fetch(DEV_AUTH_LOGOUT_PATH, {
+        method: "POST",
+      }).catch(() => undefined);
+      currentSession = null;
+      cachedFolders = null;
+      ensureAppFoldersPromise = null;
+      persistSession(null);
+      clearGrantedAccess();
+      return;
+    }
+
     if (currentSession?.accessToken) {
       const google = await waitForGoogle();
       google.accounts.oauth2.revoke(currentSession.accessToken, () => undefined);
